@@ -1,17 +1,16 @@
 const express = require("express");
 const cors = require("cors");
-// const { Resend } = require("resend"); // REMOVE RESEND
-const nodemailer = require("nodemailer"); // ADD NODEMAILER
+const nodemailer = require("nodemailer");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 1. Configure Nodemailer Transporter
+// 1. Configure Nodemailer Transporter (Requires EMAIL_USER & EMAIL_PASS ENV VARS)
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL_USER, // Your Gmail address from Render
-    pass: process.env.EMAIL_PASS, // Your App Password from Render
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 });
 
@@ -19,12 +18,34 @@ const transporter = nodemailer.createTransport({
 app.use(cors());
 app.use(express.json());
 
-// Health check endpoint (Keep this)
+// Reference Data and Helper Function
+const LAW_REFERENCES = {
+  "Civil Law":
+    "Focus on gathering contracts, correspondences, and financial records.",
+  "Criminal Law":
+    "Secure the date, time, and location of the incident. Review the Criminal Procedure Code.",
+  "Corporate Law":
+    "Prepare documents like the MOA, AOA, and relevant board meeting minutes.",
+  "Family Law":
+    "Consolidate marriage, birth certificates, and detailed financial statements.",
+  "Property Law":
+    "Ensure you have copies of the Sale Deed, Title Deeds, and property tax receipts.",
+  "Tax Law":
+    "Gather your latest ITR, financial statements, and all tax authority correspondence.",
+  Other:
+    "Please consolidate all relevant documentation, including timelines and names of involved parties.",
+};
+
+function getReferences(caseType) {
+  return LAW_REFERENCES[caseType] || LAW_REFERENCES["Other"];
+}
+
+// Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Main booking endpoint (Keep this)
+// Main booking endpoint
 app.post("/api/book-consultation", async (req, res) => {
   try {
     const {
@@ -36,7 +57,7 @@ app.post("/api/book-consultation", async (req, res) => {
       description,
       firmEmail,
       firmName,
-    } = req.body; // Re-include Validation
+    } = req.body; // Validation
 
     if (!name || !email || !phone || !occupation || !caseType || !description) {
       return res.status(400).json({
@@ -44,15 +65,16 @@ app.post("/api/book-consultation", async (req, res) => {
         message: "All fields are required",
       });
     }
-    // Re-include Email Validation (assuming isValidEmail is defined below)
-    if (!isValidEmail(email)) {
+    if (!isValidEmail(email) || !isValidEmail(firmEmail)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid email address",
+        message: "Invalid email address detected for client or firm.",
       });
     }
 
-    // Send email to firm
+    // Get the case reference message
+    const caseReferences = getReferences(caseType); // Send email to firm
+
     const firmEmailResult = await sendFirmEmail({
       name,
       email,
@@ -62,9 +84,8 @@ app.post("/api/book-consultation", async (req, res) => {
       description,
       firmEmail,
       firmName,
-    });
+    }); // Send confirmation email to client
 
-    // Send confirmation email to client
     const clientEmailResult = await sendClientEmail({
       name,
       email,
@@ -72,13 +93,14 @@ app.post("/api/book-consultation", async (req, res) => {
     });
 
     console.log("Emails sent successfully:", {
-      firmEmail: firmEmailResult.messageId, // Use messageId for Nodemailer
+      firmEmail: firmEmailResult.messageId,
       clientEmail: clientEmailResult.messageId,
     });
 
     res.json({
       success: true,
       message: "Consultation booked successfully",
+      caseReferences: caseReferences, // Sending back the reference
       emailIds: {
         firm: firmEmailResult.messageId,
         client: clientEmailResult.messageId,
@@ -89,14 +111,15 @@ app.post("/api/book-consultation", async (req, res) => {
     res.status(500).json({
       success: false,
       message:
-        "Failed to process booking or send emails. Check server logs for Nodemailer error.",
+        "Failed to process booking or send emails. Check Render logs for Nodemailer error (likely AUTH failure).",
       error: error.message,
     });
   }
 });
 
-// 2. Updated Send Email Functions (using Nodemailer)
+// Helper Functions
 
+// Send email to firm with client details
 async function sendFirmEmail({
   name,
   email,
@@ -107,53 +130,63 @@ async function sendFirmEmail({
   firmEmail,
   firmName,
 }) {
-  // HTML Content remains the same... (Skipped for brevity)
-
   const htmlContent = `
-        <!DOCTYPE html><html><body>
-        <div style="font-family: sans-serif;">
-            <h1 style="color: #ED1C24;">🔔 New Consultation Request for ${firmName}</h1>
-            <p><strong>Name:</strong> ${name}</p>
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Phone:</strong> ${phone}</p>
-            <p><strong>Case Type:</strong> ${caseType}</p>
-            <p><strong>Description:</strong> ${description}</p>
-            <p style="margin-top: 20px;">Please contact this client ASAP.</p>
-        </div>
-        </body></html>
-    `;
+        <!DOCTYPE html><html><body>
+        <div style="font-family: sans-serif;">
+            <h1 style="color: #ED1C24;">🔔 New Consultation Request for ${firmName}</h1>
+            <p><strong>Name:</strong> ${name}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Phone:</strong> ${phone}</p>
+            <p><strong>Case Type:</strong> ${caseType}</p>
+            <p><strong>Description:</strong> ${description}</p>
+            <p style="margin-top: 20px;">Please contact this client ASAP.</p>
+        </div>
+        </body></html>
+   `;
 
   return await transporter.sendMail({
-    from: process.env.EMAIL_USER, // Sent from your configured Gmail account
-    to: firmEmail, // Recipient is the firm's email provided in the script tag
+    from: process.env.EMAIL_USER,
+    to: firmEmail,
     subject: `New Consultation Request - ${name}`,
     html: htmlContent,
   });
 }
 
+// Send confirmation email to client
 async function sendClientEmail({ name, email, firmName }) {
-  // HTML Content remains the same... (Skipped for brevity)
-
   const htmlContent = `
-        <!DOCTYPE html><html><body>
-        <div style="font-family: sans-serif;">
-            <h1 style="color: #28a745;">✓ Request Confirmed, ${name}!</h1>
-            <p>Thank you for reaching out to <strong>${firmName}</strong>. We have shared your details with our team.</p>
-            <p>We'll contact you within 24-48 hours.</p>
-            <p>Best regards,<br>The ${firmName} Team</p>
-        </div>
-        </body></html>
-    `;
+        <!DOCTYPE html><html><body>
+        <div style="font-family: sans-serif;">
+            <h1 style="color: #28a745;">✓ Request Confirmed, ${name}!</h1>
+            <p>Thank you for reaching out to <strong>${firmName}</strong>. We have shared your details with our team.</p>
+            <p>We'll contact you within 24-48 hours.</p>
+            <p>Best regards,<br>The ${firmName} Team</p>
+        </div>
+        </body></html>
+    `;
 
   return await transporter.sendMail({
-    from: process.env.EMAIL_USER, // Sent from your configured Gmail account
-    to: email, // Recipient is the client's email
+    from: process.env.EMAIL_USER,
+    to: email,
     subject: `Consultation Request Confirmed - ${firmName}`,
     html: htmlContent,
   });
 }
 
-// ... (rest of the helper functions and app.listen remain the same) ...
+// Email validation helper
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({
+    success: false,
+    message: "Internal server error",
+    error: process.env.NODE_ENV === "development" ? err.message : undefined,
+  });
+});
 
 // Start server
 app.listen(PORT, () => {
