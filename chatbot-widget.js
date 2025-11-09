@@ -511,20 +511,17 @@
     addMessage("Processing your request...");
 
     try {
-      const response = await fetch(
-        `${config.apiUrl}/book-consultation`.replace("//", "/"),
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            ...state.userData,
-            firmEmail: config.firmEmail,
-            firmName: config.firmName,
-          }),
-        }
-      );
+      const response = await fetch(`${config.apiUrl}/book-consultation`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...state.userData,
+          firmEmail: config.firmEmail,
+          firmName: config.firmName,
+        }),
+      });
 
       const result = await response.json();
 
