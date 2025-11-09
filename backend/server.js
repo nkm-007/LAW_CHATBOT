@@ -26,8 +26,6 @@ app.get("/api/health", (req, res) => {
 
 // Main booking endpoint (Keep this)
 app.post("/api/book-consultation", async (req, res) => {
-  // ... (rest of the validation logic remains the same) ...
-
   try {
     const {
       name,
@@ -38,8 +36,21 @@ app.post("/api/book-consultation", async (req, res) => {
       description,
       firmEmail,
       firmName,
-    } = req.body;
-    // ... (validation skipped for brevity) ...
+    } = req.body; // Re-include Validation
+
+    if (!name || !email || !phone || !occupation || !caseType || !description) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required",
+      });
+    }
+    // Re-include Email Validation (assuming isValidEmail is defined below)
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid email address",
+      });
+    }
 
     // Send email to firm
     const firmEmailResult = await sendFirmEmail({
@@ -74,7 +85,13 @@ app.post("/api/book-consultation", async (req, res) => {
       },
     });
   } catch (error) {
-    // ... (error handling remains the same) ...
+    console.error("Error processing booking or sending email:", error);
+    res.status(500).json({
+      success: false,
+      message:
+        "Failed to process booking or send emails. Check server logs for Nodemailer error.",
+      error: error.message,
+    });
   }
 });
 
