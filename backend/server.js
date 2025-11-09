@@ -15,7 +15,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // Reference Data and Helper Function
@@ -187,7 +187,9 @@ app.use((err, req, res, next) => {
     error: process.env.NODE_ENV === "development" ? err.message : undefined,
   });
 });
-
+app.get("/", (req, res) => {
+  res.send("✅ Chatbot API live — POST to /api/book-consultation");
+});
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Chatbot API server running on port ${PORT}`);
