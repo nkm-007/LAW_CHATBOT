@@ -1,18 +1,12 @@
 const express = require("express");
 const cors = require("cors");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 1. Configure Nodemailer Transporter (Requires EMAIL_USER & EMAIL_PASS ENV VARS)
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+// Initialize Resend with API key from environment variable
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Middleware
 app.use(cors({ origin: "*" }));
@@ -57,14 +51,16 @@ app.post("/api/book-consultation", async (req, res) => {
       description,
       firmEmail,
       firmName,
-    } = req.body; // Validation
+    } = req.body;
 
+    // Validation
     if (!name || !email || !phone || !occupation || !caseType || !description) {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
       });
     }
+
     if (!isValidEmail(email) || !isValidEmail(firmEmail)) {
       return res.status(400).json({
         success: false,
@@ -73,45 +69,46 @@ app.post("/api/book-consultation", async (req, res) => {
     }
 
     // Get the case reference message
-    const caseReferences = getReferences(caseType); // Send email to firm
+    const caseReferences = getReferences(caseType);
 
-    const firmEmailResult = await sendFirmEmail({
-      name,
-      email,
-      phone,
-      occupation,
-      caseType,
-      description,
-      firmEmail,
-      firmName,
-    }); // Send confirmation email to client
-
-    const clientEmailResult = await sendClientEmail({
-      name,
-      email,
-      firmName,
-    });
+    // Send emails concurrently
+    const [firmEmailResult, clientEmailResult] = await Promise.all([
+      sendFirmEmail({
+        name,
+        email,
+        phone,
+        occupation,
+        caseType,
+        description,
+        firmEmail,
+        firmName,
+      }),
+      sendClientEmail({
+        name,
+        email,
+        firmName,
+      }),
+    ]);
 
     console.log("Emails sent successfully:", {
-      firmEmail: firmEmailResult.messageId,
-      clientEmail: clientEmailResult.messageId,
+      firmEmail: firmEmailResult.id,
+      clientEmail: clientEmailResult.id,
     });
 
     res.json({
       success: true,
       message: "Consultation booked successfully",
-      caseReferences: caseReferences, // Sending back the reference
+      caseReferences: caseReferences,
       emailIds: {
-        firm: firmEmailResult.messageId,
-        client: clientEmailResult.messageId,
+        firm: firmEmailResult.id,
+        client: clientEmailResult.id,
       },
     });
   } catch (error) {
     console.error("Error processing booking or sending email:", error);
     res.status(500).json({
       success: false,
-      message:
-        "Failed to process booking or send emails. Check Render logs for Nodemailer error (likely AUTH failure).",
+      message: "Failed to process booking or send emails.",
       error: error.message,
     });
   }
@@ -131,46 +128,73 @@ async function sendFirmEmail({
   firmName,
 }) {
   const htmlContent = `
-        <!DOCTYPE html><html><body>
-        <div style="font-family: sans-serif;">
-            <h1 style="color: #ED1C24;">🔔 New Consultation Request for ${firmName}</h1>
-            <p><strong>Name:</strong> ${name}</p>
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Phone:</strong> ${phone}</p>
-            <p><strong>Case Type:</strong> ${caseType}</p>
-            <p><strong>Description:</strong> ${description}</p>
-            <p style="margin-top: 20px;">Please contact this client ASAP.</p>
-        </div>
-        </body></html>
-   `;
+<!DOCTYPE html>
+<html>
+<body>
+  <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+    <h1 style="color: #ED1C24;">🔔 New Consultation Request for ${firmName}</h1>
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+      <p><strong>Name:</strong> ${name}</p>
+      <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+      <p><strong>Phone:</strong> <a href="tel:${phone}">${phone}</a></p>
+      <p><strong>Occupation:</strong> ${occupation}</p>
+      <p><strong>Case Type:</strong> ${caseType}</p>
+      <p><strong>Description:</strong></p>
+      <p style="background: white; padding: 15px; border-left: 4px solid #ED1C24;">${description}</p>
+    </div>
+    <p style="margin-top: 20px; color: #666;">Please contact this client as soon as possible.</p>
+  </div>
+</body>
+</html>`;
 
-  return await transporter.sendMail({
-    from: process.env.EMAIL_USER,
-    to: firmEmail,
+  const { data, error } = await resend.emails.send({
+    from: `${firmName} <onboarding@resend.dev>`, // Default Resend domain - works without verification
+    to: [firmEmail],
     subject: `New Consultation Request - ${name}`,
     html: htmlContent,
+    reply_to: firmEmail, // Important: Client can reply to firm directly
   });
+
+  if (error) {
+    throw new Error(`Failed to send firm email: ${error.message}`);
+  }
+
+  return data;
 }
 
 // Send confirmation email to client
 async function sendClientEmail({ name, email, firmName }) {
   const htmlContent = `
-        <!DOCTYPE html><html><body>
-        <div style="font-family: sans-serif;">
-            <h1 style="color: #28a745;">✓ Request Confirmed, ${name}!</h1>
-            <p>Thank you for reaching out to <strong>${firmName}</strong>. We have shared your details with our team.</p>
-            <p>We'll contact you within 24-48 hours.</p>
-            <p>Best regards,<br>The ${firmName} Team</p>
-        </div>
-        </body></html>
-    `;
+<!DOCTYPE html>
+<html>
+<body>
+  <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+    <h1 style="color: #28a745;">✓ Request Confirmed, ${name}!</h1>
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+      <p>Thank you for reaching out to <strong>${firmName}</strong>. We have received your consultation request and shared your details with our team.</p>
+      <p>Our team will review your case and contact you within 24-48 hours.</p>
+    </div>
+    <p style="color: #666;">Best regards,<br>The ${firmName} Team</p>
+    <hr style="border: none; border-top: 1px solid #e9ecef; margin: 30px 0;">
+    <p style="font-size: 12px; color: #999; text-align: center;">
+      This is an automated confirmation email. Please do not reply to this message.
+    </p>
+  </div>
+</body>
+</html>`;
 
-  return await transporter.sendMail({
-    from: process.env.EMAIL_USER,
-    to: email,
+  const { data, error } = await resend.emails.send({
+    from: `${firmName} <onboarding@resend.dev>`, // Use your verified domain
+    to: [email],
     subject: `Consultation Request Confirmed - ${firmName}`,
     html: htmlContent,
   });
+
+  if (error) {
+    throw new Error(`Failed to send client email: ${error.message}`);
+  }
+
+  return data;
 }
 
 // Email validation helper
@@ -187,11 +211,14 @@ app.use((err, req, res, next) => {
     error: process.env.NODE_ENV === "development" ? err.message : undefined,
   });
 });
+
 app.get("/", (req, res) => {
   res.send("✅ Chatbot API live — POST to /api/book-consultation");
 });
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Chatbot API server running on port ${PORT}`);
-  console.log(`📧 Email Transporter configured: ${transporter ? "Yes" : "No"}`);
+  console.log(`📧 Email service: Resend API`);
+  console.log(`🔑 API Key configured: ${process.env.RESEND_API_KEY ? "Yes" : "No - WARNING!"}`);
 });
