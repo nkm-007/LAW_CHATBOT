@@ -607,7 +607,7 @@
     }
 
     .chatbot-button {
-      background: none;
+      background: transparent;
       border: none;
       cursor: pointer;
       display: flex;
@@ -615,16 +615,17 @@
       align-items: center;
       gap: 8px;
       transition: all 0.3s ease;
+      padding: 0;
     }
 
     .chatbot-button:hover .chatbot-icon-circle {
-      transform: scale(1.05);
-      box-shadow: 0 8px 24px rgba(237, 28, 36, 0.4);
+      transform: scale(1.1);
+      box-shadow: 0 8px 24px rgba(237, 28, 36, 0.5);
     }
 
     .chatbot-icon-circle {
-      width: 60px;
-      height: 60px;
+      width: 56px;
+      height: 56px;
       background: #ED1C24;
       border-radius: 50%;
       display: flex;
@@ -636,17 +637,20 @@
     }
 
     .chatbot-icon {
-      width: 32px;
-      height: 32px;
+      width: 28px;
+      height: 28px;
       fill: white;
     }
 
     .chatbot-button-text {
-      font-size: 13px;
-      color: #333;
+      font-size: 12px;
+      color: #666;
       font-weight: 500;
       text-align: center;
       white-space: nowrap;
+      background: transparent;
+      padding: 0;
+      margin: 0;
     }
 
     .chatbot-window {
@@ -1062,17 +1066,20 @@
     addMessage("Processing your request...");
 
     try {
-      const response = await fetch(`${config.apiUrl}/book-consultation`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...state.userData,
-          firmEmail: config.firmEmail,
-          firmName: config.firmName,
-        }),
-      });
+      const response = await fetch(
+        `${config.apiUrl}/book-consultation`.replace("//", "/"),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...state.userData,
+            firmEmail: config.firmEmail,
+            firmName: config.firmName,
+          }),
+        }
+      );
 
       const result = await response.json();
 
